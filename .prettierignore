@@ -1,0 +1,16 @@
+# Build outputs
+dist/
+coverage/
+
+# Package manager files
+node_modules/
+pnpm-lock.yaml
+
+# Config files
+*.config.js
+.eslintrc.js
+
+# Other
+.DS_Store
+.env
+*.log

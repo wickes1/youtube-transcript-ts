@@ -1,0 +1,47 @@
+# Development files
+__tests__/
+examples/
+coverage/
+.github/
+.vscode/
+.husky/
+
+# Configuration files
+.eslintrc
+.eslintrc.js
+eslint.config.js
+.prettierrc
+.prettierrc.js
+.prettierignore
+tsconfig.eslint.json
+jest.config.js
+commitlint.config.js
+
+# Source maps
+**/*.map
+
+# TypeScript source files (as we're publishing compiled JS)
+src/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Test and debug files
+*.spec.ts
+*.test.ts
+test/
+tests/
+__mocks__/
+
+# Misc
+.DS_Store
+*.log
+*.tgz
+.env*
+.editorconfig
+
+# Lock files (uncomment if you want to exclude them)
+# pnpm-lock.yaml
+# yarn.lock
+# package-lock.json
