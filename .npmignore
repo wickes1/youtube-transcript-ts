@@ -5,17 +5,25 @@ coverage/
 .github/
 .vscode/
 .husky/
+.git/
+node_modules/
 
 # Configuration files
 .eslintrc
 .eslintrc.js
+.eslintrc.json
 eslint.config.js
 .prettierrc
 .prettierrc.js
+.prettierrc.json
 .prettierignore
+tsconfig.json
+tsconfig.*.json
 tsconfig.eslint.json
 jest.config.js
+jest.config.ts
 commitlint.config.js
+.commitlintrc*
 
 # Source maps
 **/*.map
@@ -26,6 +34,9 @@ src/
 # CI/CD
 .github/
 .gitlab-ci.yml
+.travis.yml
+.circleci/
+azure-pipelines.yml
 
 # Test and debug files
 *.spec.ts
@@ -33,15 +44,34 @@ src/
 test/
 tests/
 __mocks__/
+.nyc_output/
+
+# Documentation (comment if you want to include docs)
+docs/
+*.md
+!README.md
+!LICENSE
 
 # Misc
 .DS_Store
 *.log
+logs/
 *.tgz
 .env*
 .editorconfig
+.idea/
+*.iml
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
 
-# Lock files (uncomment if you want to exclude them)
-# pnpm-lock.yaml
-# yarn.lock
-# package-lock.json
+# Lock files
+pnpm-lock.yaml
+yarn.lock
+package-lock.json
+
+# Temp files
+tmp/
+temp/
+.cache/
