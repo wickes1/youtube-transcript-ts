@@ -13,6 +13,14 @@
     }
   },
   "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wickes1/youtube-transcript-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wickes1/youtube-transcript-ts/issues"
+  },
+  "homepage": "https://github.com/wickes1/youtube-transcript-ts#readme",
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
