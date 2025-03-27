@@ -20,6 +20,7 @@ yarn add youtube-transcript-ts
 ```typescript
 import { YouTubeTranscriptApi } from 'youtube-transcript-ts';
 
+// Create API instance with default configuration
 const api = new YouTubeTranscriptApi();
 
 // Get transcript using video ID or URL
@@ -38,6 +39,24 @@ console.log(`Author: ${response.metadata.author}`);
 ```
 
 ## Features
+
+### API Configuration
+
+```typescript
+// Initialize with a comprehensive configuration
+const api = new YouTubeTranscriptApi({
+  // Cache settings
+  cache: {
+    enabled: true,
+    maxAge: 3600000, // 1 hour in milliseconds
+  },
+  // Logging settings
+  logger: {
+    enabled: true,
+    namespace: 'transcript-api',
+  },
+});
+```
 
 ### Batch Processing
 
@@ -71,69 +90,37 @@ console.log(textResponse.formattedText); // Plain text string
 ### Cookie Authentication for Age-Restricted Videos
 
 ```typescript
+// Set cookies for age-restricted videos
 api.setCookies({
   CONSENT: 'YES+cb',
-  LOGIN_INFO: 'your_login_cookie',
-});
-const response = await api.fetchTranscript('AGE_RESTRICTED_VIDEO_ID');
-```
-
-### Performance Optimization
-
-```typescript
-// Custom cache settings
-const api = new YouTubeTranscriptApi({
-  enabled: true,
-  maxAge: 3600000, // 1 hour in milliseconds
-});
-
-// Enable logging
-api.setLoggerOptions({
-  enabled: true,
-  namespace: 'custom-prefix',
+  VISITOR_INFO1_LIVE: 'your_visitor_info',
 });
 ```
 
-## Response Format
+## Error Handling
+
+The API throws specific error types for different failure cases:
 
 ```typescript
-interface TranscriptResponse {
-  transcript: {
-    snippets: Array<{ text: string; start: number; duration: number }>;
-    videoId: string;
-    language: string;
-    languageCode: string;
-    isGenerated: boolean;
-  };
-  metadata: {
-    id: string;
-    title: string;
-    author: string;
-    // other video metadata
-  };
-  formattedText?: string; // Only when formatter is specified
+try {
+  const transcript = await api.fetchTranscript('VIDEO_ID');
+} catch (error) {
+  if (error instanceof VideoUnavailable) {
+    console.error('Video is not available');
+  } else if (error instanceof NoTranscriptFound) {
+    console.error('No transcript found for the requested languages');
+  } else if (error instanceof TranscriptsDisabled) {
+    console.error('Transcripts are disabled for this video');
+  } else {
+    console.error('An unexpected error occurred:', error);
+  }
 }
 ```
 
-## How It Works
+## Contributing
 
-This library fetches the YouTube video page, extracts caption track information, requests the transcript in XML format, and parses the data. No API key required.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Limitations
+## License
 
-- **Rate Limiting**: YouTube may rate-limit excessive requests
-- **Authentication**: Required for private or age-restricted videos
-- **Availability**: Not all videos have transcripts or specific languages
-- **YouTube API Changes**: Uses unofficial endpoints that may change
-- **IP Blocking**: Possible with high-volume requests
-
-## Module Format
-
-Distributed as ES module (ESM) compatible with:
-- Node.js (v12.20+, v14.14+, v16.0+)
-- Modern browsers
-- Bundlers (webpack, Rollup, Vite)
-
-## Acknowledgements
-
-Inspired by the Python [YouTube Transcript API](https://github.com/jdepoix/youtube-transcript-api) by [@jdepoix](https://github.com/jdepoix), rebuilt in TypeScript with additional features.
+MIT License - see LICENSE file for details

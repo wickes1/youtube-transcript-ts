@@ -1,5 +1,5 @@
 // Main API
-export { default, YouTubeTranscriptApi } from './api';
+export { default, YouTubeTranscriptApi, YouTubeTranscriptApiOptions } from './api';
 
 // Types exports
 export type {
@@ -31,5 +31,4 @@ export {
   NotTranslatable,
   TranslationLanguageNotAvailable,
   IpBlocked,
-  AgeRestricted,
 } from './types';

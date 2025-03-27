@@ -12,11 +12,6 @@ export interface Transcript {
   isGenerated: boolean;
 }
 
-export interface TranslationLanguage {
-  language: string;
-  languageCode: string;
-}
-
 export interface VideoMetadata {
   id: string;
   title: string;
@@ -52,7 +47,16 @@ export interface TranscriptResponse {
   formattedText?: string;
 }
 
-export interface YouTubeTranscriptError extends Error {
+export interface BatchTranscriptOptions {
+  languages?: string[];
+  preserveFormatting?: boolean;
+  formatter?: FormatterType;
+  stopOnError?: boolean;
+}
+
+export type FormatterType = 'text' | 'json' | 'srt' | 'webvtt';
+
+export interface YouTubeTranscriptError {
   videoId: string;
 }
 
@@ -82,14 +86,17 @@ export class TranscriptsDisabled extends Error implements YouTubeTranscriptError
 
 export class NotTranslatable extends Error implements YouTubeTranscriptError {
   constructor(public videoId: string) {
-    super(`Transcript for video ${videoId} is not translatable`);
+    super(`Video ${videoId} is not translatable`);
     this.name = 'NotTranslatable';
   }
 }
 
 export class TranslationLanguageNotAvailable extends Error implements YouTubeTranscriptError {
-  constructor(public videoId: string) {
-    super(`Translation language not available for video ${videoId}`);
+  constructor(
+    public videoId: string,
+    public language: string,
+  ) {
+    super(`Translation language ${language} is not available for video ${videoId}`);
     this.name = 'TranslationLanguageNotAvailable';
   }
 }
@@ -101,19 +108,7 @@ export class IpBlocked extends Error implements YouTubeTranscriptError {
   }
 }
 
-export class AgeRestricted extends Error implements YouTubeTranscriptError {
-  constructor(public videoId: string) {
-    super(`Age restricted video ${videoId}`);
-    this.name = 'AgeRestricted';
-  }
-}
-
-/**
- * Options for batch transcript retrieval
- */
-export interface BatchTranscriptOptions {
-  languages?: string[];
-  preserveFormatting?: boolean;
-  formatter?: 'json' | 'text' | 'srt' | 'webvtt';
-  stopOnError?: boolean;
+export interface TranslationLanguage {
+  languageCode: string;
+  languageName: string;
 }

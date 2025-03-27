@@ -9,16 +9,16 @@ async function performanceExample() {
     console.log('=========================================');
 
     // Create an instance with custom cache settings and logging enabled
-    const api = new YouTubeTranscriptApi(
-      {
+    const api = new YouTubeTranscriptApi({
+      cache: {
         enabled: true, // Enable caching
         maxAge: 3600000, // Cache for 1 hour (in milliseconds)
       },
-      {
+      logger: {
         enabled: true, // Enable logging
         namespace: 'youtube-api', // Custom namespace
       },
-    );
+    });
 
     // Alternatively, configure logging after creation
     // api.setLoggerOptions({
@@ -30,9 +30,9 @@ async function performanceExample() {
     console.log('\nExample with custom logger:');
     console.log('---------------------------');
 
-    const customLoggerApi = new YouTubeTranscriptApi(
-      { enabled: true },
-      {
+    const customLoggerApi = new YouTubeTranscriptApi({
+      cache: { enabled: true },
+      logger: {
         enabled: true,
         // Custom logger that formats logs differently and includes timestamps
         logger: (type, message, data) => {
@@ -46,7 +46,7 @@ async function performanceExample() {
           return true; // Prevent default logging
         },
       },
-    );
+    });
 
     // List of video IDs to test
     const videoIds = [

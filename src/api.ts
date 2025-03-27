@@ -3,17 +3,17 @@ import { decode } from 'html-entities';
 import { FormatterFactory, FormatterType } from './formatters';
 import {
   BatchTranscriptOptions,
-  IpBlocked,
   NoTranscriptFound,
   NotTranslatable,
   Transcript,
   TranscriptResponse,
-  TranscriptsDisabled,
   TranscriptSnippet,
   TranslationLanguage,
   TranslationLanguageNotAvailable,
   VideoMetadata,
   VideoUnavailable,
+  IpBlocked,
+  TranscriptsDisabled,
 } from './types';
 
 const WATCH_URL = 'https://www.youtube.com/watch';
@@ -32,19 +32,25 @@ interface CacheEntry<T> {
   timestamp: number;
 }
 
-/**
- * Logger interface for controlling how performance data is logged
- */
-export interface LoggerOptions {
-  /** Enable logging (default: false) */
+// Logger options interface
+interface LoggerOptions {
   enabled: boolean;
+  namespace: string;
   /**
-   * Custom logger function (defaults to console.log with library prefix)
+   * Custom logger function
    * Return true to prevent default logging behavior
    */
   logger?: (type: string, message: string, data?: any) => boolean;
-  /** Namespace prefix for logs (default: 'youtube-transcript') */
-  namespace?: string;
+}
+
+/**
+ * Configuration options for the YouTubeTranscriptApi
+ */
+export interface YouTubeTranscriptApiOptions {
+  /** Cache configuration options */
+  cache?: Partial<CacheOptions>;
+  /** Logger configuration options */
+  logger?: Partial<LoggerOptions>;
 }
 
 /**
@@ -59,7 +65,31 @@ export class YouTubeTranscriptApi {
   private cacheOptions: CacheOptions;
   private loggerOptions: LoggerOptions;
 
-  constructor(cacheOptions?: Partial<CacheOptions>, loggerOptions?: Partial<LoggerOptions>) {
+  /**
+   * Create a new YouTubeTranscriptApi instance
+   * @param options Configuration options for the API
+   */
+  constructor(options: YouTubeTranscriptApiOptions = {}) {
+    // Initialize cache
+    this.cache = {
+      html: new Map(),
+      transcript: new Map(),
+    };
+
+    // Default cache options
+    this.cacheOptions = {
+      enabled: true,
+      maxAge: 3600000, // 1 hour default cache
+      ...options.cache,
+    };
+
+    // Default logger options
+    this.loggerOptions = {
+      enabled: false,
+      namespace: 'youtube-transcript',
+      ...options.logger,
+    };
+
     // Configure axios with performance optimizations
     this.httpClient = axios.create({
       headers: {
@@ -82,25 +112,16 @@ export class YouTubeTranscriptApi {
           }
         : {}),
     });
+  }
 
-    // Initialize cache
-    this.cache = {
-      html: new Map(),
-      transcript: new Map(),
-    };
-
-    // Default cache options
-    this.cacheOptions = {
-      enabled: true,
-      maxAge: 3600000, // 1 hour default cache
-      ...cacheOptions,
-    };
-
-    // Default logger options
+  /**
+   * Configure logging behavior
+   * @param options Logger configuration options
+   */
+  public setLoggerOptions(options: Partial<LoggerOptions>): void {
     this.loggerOptions = {
-      enabled: false,
-      namespace: 'youtube-transcript',
-      ...loggerOptions,
+      ...this.loggerOptions,
+      ...options,
     };
   }
 
@@ -116,14 +137,16 @@ export class YouTubeTranscriptApi {
   }
 
   /**
-   * Configure logging behavior
-   * @param options Logger configuration options
+   * Sets cookies for authentication (useful for age-restricted videos)
+   * @param cookies Dictionary of cookie name-value pairs
    */
-  public setLoggerOptions(options: Partial<LoggerOptions>): void {
-    this.loggerOptions = {
-      ...this.loggerOptions,
-      ...options,
-    };
+  public setCookies(cookies: Record<string, string>): void {
+    // Update axios instance with cookies
+    const cookieString = Object.entries(cookies)
+      .map(([name, value]) => `${name}=${value}`)
+      .join('; ');
+
+    this.httpClient.defaults.headers.common['Cookie'] = cookieString;
   }
 
   /**
@@ -240,12 +263,12 @@ export class YouTubeTranscriptApi {
   }
 
   /**
-   * Fetches the transcript for a single video with optimized performance
-   * @param videoIdOrUrl Video ID or YouTube URL (various formats supported)
-   * @param languages List of language codes to search for (in order of preference)
-   * @param preserveFormatting Whether to keep select HTML text formatting
-   * @param formatter Optional formatter to format the output (json, text, srt, webvtt)
-   * @returns A standardized TranscriptResponse object containing transcript data, video metadata, and optionally formatted text
+   * Fetch transcript for a video
+   * @param videoIdOrUrl Video ID or YouTube URL
+   * @param languages Optional array of language codes to try in order
+   * @param preserveFormatting Whether to preserve text formatting
+   * @param formatter Optional formatter to format the output
+   * @returns TranscriptResponse with transcript data and metadata
    */
   public async fetchTranscript(
     videoIdOrUrl: string,
@@ -256,31 +279,47 @@ export class YouTubeTranscriptApi {
     const startTotal = Date.now();
     const timings: Record<string, number> = {};
 
-    const logPerformance = (step: string, startTime: number) => {
+    const logPerformance = (label: string, startTime: number) => {
       const duration = Date.now() - startTime;
-      timings[step] = duration;
-      this.log('performance', `${step}: ${duration}ms`);
+      timings[label] = duration;
+      this.log('performance', `${label}: ${duration}ms`);
     };
 
     const videoId = YouTubeTranscriptApi.getVideoId(videoIdOrUrl);
-
-    // Generate cache keys
     const htmlCacheKey = `html:${videoId}`;
     const transcriptCacheKey = `transcript:${videoId}:${languages.join(',')}:${preserveFormatting}`;
 
-    // Try to get transcript from cache first
-    const cachedTranscript = this.cache.transcript.get(transcriptCacheKey);
-    if (this.isCacheValid(cachedTranscript)) {
-      this.log('performance', 'Using cached transcript data');
+    try {
+      // Check cache for transcript
+      const cachedTranscript = this.cache.transcript.get(transcriptCacheKey);
+      if (this.isCacheValid(cachedTranscript)) {
+        this.log('performance', 'Using cached transcript');
+        // Fetch HTML for metadata
+        const html = await this.fetchVideoHtml(videoId);
+        const metadata = this.extractMetadata(html);
 
-      // We still need metadata even when using cached transcript
-      let metadata: VideoMetadata;
+        const response: TranscriptResponse = {
+          transcript: cachedTranscript!.data,
+          metadata,
+          formattedText: undefined,
+        };
 
-      // Fetch HTML (try cache first)
+        // Apply formatter if specified
+        if (formatter) {
+          const startFormatting = Date.now();
+          response.formattedText = FormatterFactory.create(formatter).format(
+            cachedTranscript!.data,
+          );
+          logPerformance('Apply Formatting', startFormatting);
+        }
+
+        return response;
+      }
+
+      // Fetch video HTML
       const startHtmlFetch = Date.now();
-      const cachedHtml = this.cache.html.get(htmlCacheKey);
       let html: string;
-
+      const cachedHtml = this.cache.html.get(htmlCacheKey);
       if (this.isCacheValid(cachedHtml)) {
         html = cachedHtml!.data;
         this.log('performance', 'Using cached HTML');
@@ -296,11 +335,37 @@ export class YouTubeTranscriptApi {
 
       // Extract metadata
       const startMetadataExtract = Date.now();
-      metadata = this.extractMetadataFromHtml(html, videoId);
+      const metadata = this.extractMetadata(html);
       logPerformance('Metadata Extract', startMetadataExtract);
 
+      // Extract captions data
+      const startCaptionsExtract = Date.now();
+      const captionsJson = this.extractCaptionsJson(html, videoId);
+      logPerformance('Captions Extract', startCaptionsExtract);
+
+      // Build transcript list
+      const startBuildList = Date.now();
+      const transcriptList = TranscriptList.build(this.httpClient, videoId, captionsJson);
+      logPerformance('Build Transcript List', startBuildList);
+
+      // Find appropriate language
+      const startFindTranscript = Date.now();
+      const transcript = await transcriptList.findTranscript(languages);
+      logPerformance('Find Transcript', startFindTranscript);
+
+      // Fetch transcript content
+      const startFetchContent = Date.now();
+      const transcriptData = await transcript.fetch(preserveFormatting);
+      logPerformance('Fetch Content', startFetchContent);
+
+      // Store transcript in cache
+      this.cache.transcript.set(transcriptCacheKey, {
+        data: transcriptData,
+        timestamp: Date.now(),
+      });
+
       const response: TranscriptResponse = {
-        transcript: cachedTranscript!.data,
+        transcript: transcriptData,
         metadata: metadata,
         formattedText: undefined,
       };
@@ -308,82 +373,18 @@ export class YouTubeTranscriptApi {
       // Apply formatter if specified
       if (formatter) {
         const startFormatting = Date.now();
-        response.formattedText = FormatterFactory.create(formatter).format(cachedTranscript!.data);
+        response.formattedText = FormatterFactory.create(formatter).format(transcriptData);
         logPerformance('Apply Formatting', startFormatting);
       }
 
-      logPerformance('Total (From Cache)', startTotal);
-      this.log('performance', 'Summary (Cached)', timings);
+      logPerformance('Total', startTotal);
+      this.log('performance', 'Summary', timings);
 
       return response;
+    } catch (error) {
+      this.log('error', `Failed to fetch transcript for video ${videoId}`, error);
+      throw error;
     }
-
-    // Fetch HTML (try cache first)
-    const startHtmlFetch = Date.now();
-    const cachedHtml = this.cache.html.get(htmlCacheKey);
-    let html: string;
-
-    if (this.isCacheValid(cachedHtml)) {
-      html = cachedHtml!.data;
-      this.log('performance', 'Using cached HTML');
-    } else {
-      html = await this.fetchVideoHtml(videoId);
-      // Store in cache
-      this.cache.html.set(htmlCacheKey, {
-        data: html,
-        timestamp: Date.now(),
-      });
-    }
-    logPerformance('HTML Fetch', startHtmlFetch);
-
-    // Extract metadata
-    const startMetadataExtract = Date.now();
-    const metadata = this.extractMetadataFromHtml(html, videoId);
-    logPerformance('Metadata Extract', startMetadataExtract);
-
-    // Extract captions data
-    const startCaptionsExtract = Date.now();
-    const captionsJson = this.extractCaptionsJson(html, videoId);
-    logPerformance('Captions Extract', startCaptionsExtract);
-
-    // Build transcript list
-    const startBuildList = Date.now();
-    const transcriptList = TranscriptList.build(this.httpClient, videoId, captionsJson);
-    logPerformance('Build Transcript List', startBuildList);
-
-    // Find appropriate language
-    const startFindTranscript = Date.now();
-    const transcript = await transcriptList.findTranscript(languages);
-    logPerformance('Find Transcript', startFindTranscript);
-
-    // Fetch transcript content
-    const startFetchContent = Date.now();
-    const transcriptData = await transcript.fetch(preserveFormatting);
-    logPerformance('Fetch Transcript Content', startFetchContent);
-
-    // Store transcript in cache
-    this.cache.transcript.set(transcriptCacheKey, {
-      data: transcriptData,
-      timestamp: Date.now(),
-    });
-
-    const response: TranscriptResponse = {
-      transcript: transcriptData,
-      metadata: metadata,
-      formattedText: undefined,
-    };
-
-    // Apply formatter if specified
-    if (formatter) {
-      const startFormatting = Date.now();
-      response.formattedText = FormatterFactory.create(formatter).format(transcriptData);
-      logPerformance('Apply Formatting', startFormatting);
-    }
-
-    logPerformance('Total', startTotal);
-    this.log('performance', 'Summary', timings);
-
-    return response;
   }
 
   /**
@@ -474,17 +475,47 @@ export class YouTubeTranscriptApi {
   }
 
   /**
-   * Extract metadata from HTML without making additional requests
-   * @param html The HTML content of the video page
-   * @param videoId YouTube video ID for error reporting
-   * @returns Video metadata object
+   * Fetch video HTML content
+   * @param videoId Video ID
+   * @returns HTML content as string
    * @private
    */
-  private extractMetadataFromHtml(html: string, videoId: string): VideoMetadata {
-    const metadataMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?});/);
+  private async fetchVideoHtml(videoId: string): Promise<string> {
+    try {
+      const response = await this.httpClient.get(WATCH_URL, {
+        params: { v: videoId },
+      });
 
+      if (response.status !== 200) {
+        throw new VideoUnavailable(videoId);
+      }
+
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        if (status === 404 || status === 410) {
+          throw new VideoUnavailable(videoId);
+        }
+        if (status === 403) {
+          // Possible IP block or geo-restriction
+          throw new IpBlocked(videoId);
+        }
+      }
+      throw new VideoUnavailable(videoId);
+    }
+  }
+
+  /**
+   * Extract video metadata from HTML
+   * @param html Video page HTML
+   * @returns VideoMetadata object
+   * @private
+   */
+  private extractMetadata(html: string): VideoMetadata {
+    const metadataMatch = html.match(/ytInitialPlayerResponse\s*=\s*({.+?})\s*;/);
     if (!metadataMatch) {
-      throw new Error(`Failed to extract metadata for video ${videoId}`);
+      throw new Error('Could not extract video metadata');
     }
 
     try {
@@ -492,14 +523,14 @@ export class YouTubeTranscriptApi {
       const videoDetails = data.videoDetails;
 
       if (!videoDetails) {
-        throw new Error(`No video details found for video ${videoId}`);
+        throw new Error(`No video details found`);
       }
 
       return {
         id: videoDetails.videoId,
-        title: videoDetails.title,
-        description: videoDetails.shortDescription,
-        author: videoDetails.author,
+        title: decode(videoDetails.title),
+        description: decode(videoDetails.shortDescription),
+        author: decode(videoDetails.author),
         channelId: videoDetails.channelId,
         lengthSeconds: parseInt(videoDetails.lengthSeconds, 10),
         viewCount: parseInt(videoDetails.viewCount, 10),
@@ -516,26 +547,14 @@ export class YouTubeTranscriptApi {
           })) || [],
       };
     } catch (error) {
-      throw new Error(`Failed to parse metadata for video ${videoId}: ${(error as Error).message}`);
+      throw new Error(`Failed to parse video metadata: ${(error as Error).message}`);
     }
-  }
-
-  /**
-   * Sets cookies for authentication (useful for age-restricted videos)
-   * @param cookies Dictionary of cookie name-value pairs
-   */
-  public setCookies(cookies: Record<string, string>): void {
-    // Update axios instance with cookies
-    const cookieString = Object.entries(cookies)
-      .map(([name, value]) => `${name}=${value}`)
-      .join('; ');
-
-    this.httpClient.defaults.headers.common['Cookie'] = cookieString;
   }
 
   /**
    * Retrieves the list of available transcripts for a video
    * @param videoIdOrUrl The ID or URL of the video
+   * @returns A transcript list with available transcripts
    */
   public async listTranscripts(videoIdOrUrl: string): Promise<TranscriptList> {
     const videoId = YouTubeTranscriptApi.getVideoId(videoIdOrUrl);
@@ -544,17 +563,13 @@ export class YouTubeTranscriptApi {
     return TranscriptList.build(this.httpClient, videoId, captionsJson);
   }
 
-  private async fetchVideoHtml(videoId: string): Promise<string> {
-    try {
-      const response = await this.httpClient.get(WATCH_URL, {
-        params: { v: videoId },
-      });
-      return response.data;
-    } catch (error) {
-      throw new VideoUnavailable(videoId);
-    }
-  }
-
+  /**
+   * Extract captions data from HTML
+   * @param html Video page HTML
+   * @param videoId Video ID for error reporting
+   * @returns Captions data object
+   * @private
+   */
   private extractCaptionsJson(html: string, videoId: string): any {
     const splittedHTML = html.split('"captions":');
 
@@ -586,7 +601,8 @@ export class YouTubeTranscriptApi {
       if (
         error instanceof VideoUnavailable ||
         error instanceof TranscriptsDisabled ||
-        error instanceof NoTranscriptFound
+        error instanceof NoTranscriptFound ||
+        error instanceof IpBlocked
       ) {
         throw error;
       }
@@ -618,7 +634,7 @@ class TranscriptList {
     const translationLanguages: TranslationLanguage[] = (
       captionsJson.translationLanguages || []
     ).map((lang: any) => ({
-      language: lang.languageName.simpleText,
+      languageName: lang.languageName.simpleText,
       languageCode: lang.languageCode,
     }));
 
@@ -730,7 +746,7 @@ class TranscriptEntry {
     }
 
     if (!this.translationLanguages.some(lang => lang.languageCode === languageCode)) {
-      throw new TranslationLanguageNotAvailable(this.videoId);
+      throw new TranslationLanguageNotAvailable(this.videoId, languageCode);
     }
 
     const translatedLanguage = this.translationLanguages.find(
@@ -741,7 +757,7 @@ class TranscriptEntry {
       this.httpClient,
       this.videoId,
       `${this.url}&tlang=${languageCode}`,
-      translatedLanguage.language,
+      translatedLanguage.languageName,
       languageCode,
       true,
       [],
