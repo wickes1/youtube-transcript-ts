@@ -2,7 +2,6 @@ import axios, { AxiosInstance } from 'axios';
 import { decode } from 'html-entities';
 import { FormatterFactory, FormatterType } from './formatters';
 import {
-  BatchTranscriptOptions,
   NoTranscriptFound,
   NotTranslatable,
   Transcript,
@@ -15,6 +14,9 @@ import {
   IpBlocked,
   TranscriptsDisabled,
 } from './types';
+// Import proxy agents
+import { HttpProxyAgent } from 'http-proxy-agent';
+import { HttpsProxyAgent } from 'https-proxy-agent';
 
 const WATCH_URL = 'https://www.youtube.com/watch';
 const USER_AGENT =
@@ -59,6 +61,18 @@ export interface InvidiousOptions {
 }
 
 /**
+ * Proxy configuration options for HTTP/HTTPS requests
+ */
+export interface ProxyOptions {
+  /** Enable proxy for requests (default: false) */
+  enabled: boolean;
+  /** The HTTP proxy URL (e.g., 'http://user:pass@proxy.example.com:8080') */
+  http?: string;
+  /** The HTTPS proxy URL (e.g., 'http://user:pass@proxy.example.com:8080') */
+  https?: string;
+}
+
+/**
  * Configuration options for the YouTubeTranscriptApi
  */
 export interface YouTubeTranscriptApiOptions {
@@ -68,6 +82,8 @@ export interface YouTubeTranscriptApiOptions {
   logger?: Partial<LoggerOptions>;
   /** Invidious fallback configuration options */
   invidious?: Partial<InvidiousOptions>;
+  /** Proxy configuration options */
+  proxy?: Partial<ProxyOptions>;
 }
 
 /**
@@ -83,6 +99,7 @@ export class YouTubeTranscriptApi {
   private cacheOptions: CacheOptions;
   private loggerOptions: LoggerOptions;
   private invidiousOptions: InvidiousOptions;
+  private proxyOptions: ProxyOptions;
 
   /**
    * Create a new YouTubeTranscriptApi instance
@@ -117,6 +134,14 @@ export class YouTubeTranscriptApi {
       ...options.invidious,
     };
 
+    // Default proxy options
+    this.proxyOptions = {
+      enabled: false,
+      http: '',
+      https: '',
+      ...options.proxy,
+    };
+
     // Initialize Invidious client if enabled
     if (this.invidiousOptions.enabled) {
       const instanceUrls = Array.isArray(this.invidiousOptions.instanceUrls)
@@ -141,18 +166,32 @@ export class YouTubeTranscriptApi {
       },
       timeout: 10000, // 10 second timeout
       maxRedirects: 5,
-      // We don't set keep-alive agents in browser environments
-      ...(typeof window === 'undefined'
+      // Add proxy configuration if enabled
+      ...(this.proxyOptions.enabled
         ? {
-            // Only use these in Node.js environments
-            httpAgent: new (require('http').Agent)({
-              keepAlive: true,
-            }),
-            httpsAgent: new (require('https').Agent)({
-              keepAlive: true,
-            }),
+            proxy: false, // Disable the built-in proxy resolver to use the httpAgent/httpsAgent
+            ...(typeof window === 'undefined'
+              ? {
+                  // Only use these in Node.js environments
+                  httpAgent: new HttpProxyAgent(this.proxyOptions.http || ''),
+                  httpsAgent: new HttpsProxyAgent(
+                    this.proxyOptions.https || this.proxyOptions.http || '',
+                  ),
+                }
+              : {}),
           }
-        : {}),
+        : // We don't set keep-alive agents in browser environments
+          typeof window === 'undefined'
+          ? {
+              // Only use these in Node.js environments
+              httpAgent: new (require('http').Agent)({
+                keepAlive: true,
+              }),
+              httpsAgent: new (require('https').Agent)({
+                keepAlive: true,
+              }),
+            }
+          : {}),
     });
   }
 
@@ -176,6 +215,65 @@ export class YouTubeTranscriptApi {
       ...this.cacheOptions,
       ...options,
     };
+  }
+
+  /**
+   * Configure proxy settings for all requests
+   * @param options Proxy configuration options
+   */
+  public setProxyOptions(options: Partial<ProxyOptions>): void {
+    this.proxyOptions = {
+      ...this.proxyOptions,
+      ...options,
+    };
+
+    // Reinitialize the HTTP client with the new proxy settings
+    this.httpClient = axios.create({
+      headers: {
+        'Accept-Language': 'en-US',
+        'User-Agent': USER_AGENT,
+        'Accept-Encoding': 'gzip, deflate, br', // Enable compression
+      },
+      timeout: 10000, // 10 second timeout
+      maxRedirects: 5,
+      // Add proxy configuration if enabled
+      ...(this.proxyOptions.enabled
+        ? {
+            proxy: false, // Disable the built-in proxy resolver to use the httpAgent/httpsAgent
+            ...(typeof window === 'undefined'
+              ? {
+                  // Only use these in Node.js environments
+                  httpAgent: new HttpProxyAgent(this.proxyOptions.http || ''),
+                  httpsAgent: new HttpsProxyAgent(
+                    this.proxyOptions.https || this.proxyOptions.http || '',
+                  ),
+                }
+              : {}),
+          }
+        : // We don't set keep-alive agents in browser environments
+          typeof window === 'undefined'
+          ? {
+              // Only use these in Node.js environments
+              httpAgent: new (require('http').Agent)({
+                keepAlive: true,
+              }),
+              httpsAgent: new (require('https').Agent)({
+                keepAlive: true,
+              }),
+            }
+          : {}),
+    });
+
+    // If there are cookies set, reapply them to the new client
+    if (this.httpClient.defaults.headers.common['Cookie']) {
+      const cookieString = this.httpClient.defaults.headers.common['Cookie'];
+      this.httpClient.defaults.headers.common['Cookie'] = cookieString;
+    }
+
+    // Reinitialize Invidious client if it's enabled
+    if (this.invidiousOptions.enabled) {
+      this.initInvidiousClient();
+    }
   }
 
   /**
@@ -225,6 +323,21 @@ export class YouTubeTranscriptApi {
         Accept: 'application/json',
         'User-Agent': USER_AGENT,
       },
+      // Add proxy configuration if enabled
+      ...(this.proxyOptions.enabled
+        ? {
+            proxy: false, // Disable the built-in proxy resolver to use the httpAgent/httpsAgent
+            ...(typeof window === 'undefined'
+              ? {
+                  // Only use these in Node.js environments
+                  httpAgent: new HttpProxyAgent(this.proxyOptions.http || ''),
+                  httpsAgent: new HttpsProxyAgent(
+                    this.proxyOptions.https || this.proxyOptions.http || '',
+                  ),
+                }
+              : {}),
+          }
+        : {}),
     });
 
     // Store all instance URLs for fallback use

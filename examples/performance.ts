@@ -93,25 +93,7 @@ async function performanceExample() {
       undefined,
     );
 
-    console.log('\n4. Batch processing with parallelization:');
-    console.log('--------------------------------------');
-
-    // Testing batch processing (processes in batches of 3 in parallel)
-    console.time('Batch processing');
-    const batchResults = await api.fetchTranscripts(videoIds);
-    console.timeEnd('Batch processing');
-
-    console.log(`\nSuccessfully fetched ${Object.keys(batchResults.results).length} transcripts`);
-    if (Object.keys(batchResults.errors).length > 0) {
-      console.log(`Failed to fetch ${Object.keys(batchResults.errors).length} transcripts`);
-    }
-
-    // Display results
-    for (const [videoId, result] of Object.entries(batchResults.results)) {
-      console.log(`- "${result.metadata.title}": ${result.transcript.snippets.length} snippets`);
-    }
-
-    console.log('\n5. Clearing cache and refetching:');
+    console.log('\n4. Clearing cache and refetching:');
     console.log('------------------------------');
 
     // Clear cache and fetch again
@@ -130,7 +112,7 @@ async function performanceExample() {
     console.log(`\nFetched transcript for "${results3.metadata.title}" without cache!`);
 
     // Configure cache options
-    console.log('\n6. Testing with different cache settings:');
+    console.log('\n5. Testing with different cache settings:');
     console.log('-------------------------------------');
 
     api.setCacheOptions({
@@ -156,7 +138,7 @@ async function performanceExample() {
     console.log(`\nFetched transcript for "${results4.metadata.title}" after cache expiration!`);
 
     // Disable logging
-    console.log('\n7. Disabling logging:');
+    console.log('\n6. Disabling logging:');
     console.log('-------------------');
 
     api.setLoggerOptions({ enabled: false });

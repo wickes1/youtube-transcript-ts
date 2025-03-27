@@ -9,7 +9,6 @@ export type {
   VideoMetadata,
   ThumbnailInfo,
   TranslationLanguage,
-  BatchTranscriptOptions,
 } from './types';
 
 // Formatters

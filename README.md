@@ -61,6 +61,12 @@ const api = new YouTubeTranscriptApi({
     instanceUrls: 'https://yewtu.be',
     timeout: 10000, // 10 seconds
   },
+  // Proxy settings
+  proxy: {
+    enabled: false, // disabled by default
+    http: 'http://localhost:8080',
+    https: 'http://localhost:8080',
+  },
 });
 ```
 
@@ -100,17 +106,41 @@ api.setInvidiousOptions({
 
 > **Note for self-hosting Invidious**: If you're running your own Invidious instance for transcript fetching, you must set `use_innertube_for_captions: true` in your Invidious configuration file for transcript functionality to work properly.
 
-### Batch Processing
+### HTTP/HTTPS Proxy Support
+
+You can configure the library to use HTTP and HTTPS proxies for all outgoing requests. This is useful in environments where direct connections to YouTube are restricted or when you need to route traffic through specific proxy servers.
 
 ```typescript
-const { results, errors } = await api.fetchTranscripts(
-  ['VIDEO_ID_1', 'VIDEO_ID_2', 'https://www.youtube.com/watch?v=VIDEO_ID_3'],
-  {
-    languages: ['en', 'de'],
-    formatter: 'json',
-    stopOnError: false,
+// Initialize with proxy configuration
+const api = new YouTubeTranscriptApi({
+  proxy: {
+    enabled: true,
+    http: 'http://http-proxy-server.com:8080',
+    https: 'http://https-proxy-server.com:8443',
   },
-);
+});
+
+// When both HTTP and HTTPS use the same proxy
+const apiWithSameProxy = new YouTubeTranscriptApi({
+  proxy: {
+    enabled: true,
+    http: 'http://proxy-server.com:8080',
+    https: 'http://proxy-server.com:8080',
+  },
+});
+
+// Configure proxy after initialization
+const api = new YouTubeTranscriptApi();
+api.setProxyOptions({
+  enabled: true,
+  http: 'http://username:password@http-proxy.com:8080',
+  https: 'http://username:password@https-proxy.com:8443',
+});
+
+// Disable proxy
+api.setProxyOptions({
+  enabled: false,
+});
 ```
 
 ### Language Selection

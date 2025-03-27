@@ -47,13 +47,6 @@ export interface TranscriptResponse {
   formattedText?: string;
 }
 
-export interface BatchTranscriptOptions {
-  languages?: string[];
-  preserveFormatting?: boolean;
-  formatter?: FormatterType;
-  stopOnError?: boolean;
-}
-
 export type FormatterType = 'text' | 'json' | 'srt' | 'webvtt';
 
 export interface YouTubeTranscriptError {

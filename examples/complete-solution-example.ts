@@ -25,26 +25,6 @@ async function main() {
     console.log(`Author: ${response.metadata.author}`);
     console.log(`Language: ${response.transcript.language}`);
     console.log(`Lines: ${response.transcript.snippets.length}`);
-
-    // Process batch of videos for production scenarios
-    console.log('\nProcessing a batch of videos...');
-    const { results, errors } = await api.fetchTranscripts(
-      ['dQw4w9WgXcQ', 'j5a0jTc9S10', 'QH2-TGUlwu4'],
-      {
-        languages: ['en', 'es'], // Try English first, then Spanish
-        stopOnError: false, // Continue even if some fail
-      },
-    );
-
-    console.log(`Successfully processed ${Object.keys(results).length} videos`);
-    console.log(`Failed to process ${Object.keys(errors).length} videos`);
-
-    if (Object.keys(errors).length > 0) {
-      console.log('\nErrors encountered:');
-      for (const [videoId, error] of Object.entries(errors)) {
-        console.log(`${videoId}: ${error.message}`);
-      }
-    }
   } catch (error) {
     console.error('Failed to fetch transcript:', error);
     console.error('\nPossible solutions:');
