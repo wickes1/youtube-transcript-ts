@@ -55,8 +55,50 @@ const api = new YouTubeTranscriptApi({
     enabled: true,
     namespace: 'transcript-api',
   },
+  // Invidious settings
+  invidious: {
+    enabled: false, // disabled by default
+    instanceUrls: 'https://yewtu.be',
+    timeout: 10000, // 10 seconds
+  },
 });
 ```
+
+### Invidious Proxy Support
+
+Invidious proxy support allows you to fetch transcripts even when YouTube API access is restricted or blocked. This feature is particularly useful for:
+
+- Bypassing IP blocks or regional restrictions
+- Accessing transcripts without YouTube tracking
+- Improving reliability when YouTube API changes
+
+```typescript
+// Setup with Invidious fallback
+const api = new YouTubeTranscriptApi({
+  invidious: {
+    enabled: true,
+    instanceUrls: 'https://yewtu.be', // Use a single instance
+  },
+});
+
+// Multiple fallback instances for improved reliability
+const apiWithFallbacks = new YouTubeTranscriptApi({
+  invidious: {
+    enabled: true,
+    instanceUrls: ['https://yewtu.be'],
+    timeout: 8000, // custom timeout in ms
+  },
+});
+
+// Configure Invidious after initialization
+const api = new YouTubeTranscriptApi();
+api.setInvidiousOptions({
+  enabled: true,
+  instanceUrls: 'https://yewtu.be',
+});
+```
+
+> **Note for self-hosting Invidious**: If you're running your own Invidious instance for transcript fetching, you must set `use_innertube_for_captions: true` in your Invidious configuration file for transcript functionality to work properly.
 
 ### Batch Processing
 
@@ -111,6 +153,8 @@ try {
     console.error('No transcript found for the requested languages');
   } else if (error instanceof TranscriptsDisabled) {
     console.error('Transcripts are disabled for this video');
+  } else if (error instanceof IpBlocked) {
+    console.error('Your IP address is blocked by YouTube');
   } else {
     console.error('An unexpected error occurred:', error);
   }

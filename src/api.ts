@@ -44,6 +44,21 @@ interface LoggerOptions {
 }
 
 /**
+ * Invidious configuration options for fallback when YouTube blocks requests
+ */
+export interface InvidiousOptions {
+  /** Enable Invidious fallback (default: false) */
+  enabled: boolean;
+  /**
+   * Invidious instance URL(s). Can be a single URL string or an array of URLs for fallback.
+   * If an array is provided, instances will be tried in order until one works.
+   */
+  instanceUrls: string | string[];
+  /** Timeout in milliseconds for Invidious requests (default: 10000) */
+  timeout?: number;
+}
+
+/**
  * Configuration options for the YouTubeTranscriptApi
  */
 export interface YouTubeTranscriptApiOptions {
@@ -51,6 +66,8 @@ export interface YouTubeTranscriptApiOptions {
   cache?: Partial<CacheOptions>;
   /** Logger configuration options */
   logger?: Partial<LoggerOptions>;
+  /** Invidious fallback configuration options */
+  invidious?: Partial<InvidiousOptions>;
 }
 
 /**
@@ -58,12 +75,14 @@ export interface YouTubeTranscriptApiOptions {
  */
 export class YouTubeTranscriptApi {
   private httpClient: AxiosInstance;
+  private invidiousClient: AxiosInstance | null = null;
   private cache: {
     html: Map<string, CacheEntry<string>>;
     transcript: Map<string, CacheEntry<Transcript>>;
   };
   private cacheOptions: CacheOptions;
   private loggerOptions: LoggerOptions;
+  private invidiousOptions: InvidiousOptions;
 
   /**
    * Create a new YouTubeTranscriptApi instance
@@ -89,6 +108,29 @@ export class YouTubeTranscriptApi {
       namespace: 'youtube-transcript',
       ...options.logger,
     };
+
+    // Default Invidious options (no default instance URL)
+    this.invidiousOptions = {
+      enabled: false,
+      instanceUrls: '',
+      timeout: 10000,
+      ...options.invidious,
+    };
+
+    // Initialize Invidious client if enabled
+    if (this.invidiousOptions.enabled) {
+      const instanceUrls = Array.isArray(this.invidiousOptions.instanceUrls)
+        ? this.invidiousOptions.instanceUrls
+        : [this.invidiousOptions.instanceUrls];
+
+      if (instanceUrls.length === 0 || (instanceUrls.length === 1 && !instanceUrls[0])) {
+        throw new Error(
+          'At least one Invidious instance URL must be provided when Invidious is enabled',
+        );
+      }
+
+      this.initInvidiousClient();
+    }
 
     // Configure axios with performance optimizations
     this.httpClient = axios.create({
@@ -134,6 +176,155 @@ export class YouTubeTranscriptApi {
       ...this.cacheOptions,
       ...options,
     };
+  }
+
+  /**
+   * Configure Invidious fallback behavior
+   * @param options Invidious configuration options
+   */
+  public setInvidiousOptions(options: Partial<InvidiousOptions>): void {
+    this.invidiousOptions = {
+      ...this.invidiousOptions,
+      ...options,
+    };
+
+    // Initialize or update Invidious client if enabled
+    if (this.invidiousOptions.enabled) {
+      const instanceUrls = Array.isArray(this.invidiousOptions.instanceUrls)
+        ? this.invidiousOptions.instanceUrls
+        : [this.invidiousOptions.instanceUrls];
+
+      if (instanceUrls.length === 0 || (instanceUrls.length === 1 && !instanceUrls[0])) {
+        throw new Error(
+          'At least one Invidious instance URL must be provided when Invidious is enabled',
+        );
+      }
+
+      this.initInvidiousClient();
+    } else {
+      this.invidiousClient = null;
+    }
+  }
+
+  /**
+   * Initialize the Invidious API client
+   * @private
+   */
+  private initInvidiousClient(): void {
+    // Get the first instance URL as the default
+    const instanceUrls = Array.isArray(this.invidiousOptions.instanceUrls)
+      ? this.invidiousOptions.instanceUrls
+      : [this.invidiousOptions.instanceUrls];
+
+    const primaryInstanceUrl = instanceUrls[0];
+
+    this.invidiousClient = axios.create({
+      baseURL: primaryInstanceUrl,
+      timeout: this.invidiousOptions.timeout || 10000,
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': USER_AGENT,
+      },
+    });
+
+    // Store all instance URLs for fallback use
+    (this.invidiousClient as any).__instanceUrls = instanceUrls;
+    (this.invidiousClient as any).__currentInstanceIndex = 0;
+
+    // Validate the Invidious instance by making a test request
+    this.validateInvidiousInstance().catch(error => {
+      this.log(
+        'error',
+        `Failed to validate primary Invidious instance at ${primaryInstanceUrl}`,
+        error,
+      );
+
+      // If we have multiple instances, we'll try others when making actual requests
+      if (instanceUrls.length > 1) {
+        this.log('info', `Will try ${instanceUrls.length - 1} alternative instance(s) when needed`);
+      } else {
+        this.log('info', 'Invidious fallback will be disabled');
+        this.invidiousClient = null;
+      }
+    });
+  }
+
+  /**
+   * Validate that the configured Invidious instance is available and working
+   * @private
+   */
+  private async validateInvidiousInstance(): Promise<boolean> {
+    if (!this.invidiousClient) {
+      return false;
+    }
+
+    try {
+      // Make a simple request to the Invidious API to check if it's working
+      const response = await this.invidiousClient.get('/api/v1/stats', {
+        timeout: 5000, // Short timeout for this test
+      });
+
+      if (response.status !== 200) {
+        this.log('error', `Invidious instance returned non-200 status: ${response.status}`);
+        return false;
+      }
+
+      const instanceUrls = Array.isArray(this.invidiousOptions.instanceUrls)
+        ? this.invidiousOptions.instanceUrls
+        : [this.invidiousOptions.instanceUrls];
+
+      const primaryInstanceUrl = instanceUrls[0];
+
+      this.log('info', `Successfully validated Invidious instance at ${primaryInstanceUrl}`);
+      return true;
+    } catch (error) {
+      this.log('error', 'Invidious instance validation failed', error);
+      return false;
+    }
+  }
+
+  /**
+   * Tries to get an Invidious instance that works
+   * @param operation The operation to perform with the client
+   * @returns The result of the operation
+   * @private
+   */
+  private async tryWithInvidiousInstances<T>(
+    operation: (client: AxiosInstance, instanceUrl: string) => Promise<T>,
+  ): Promise<T> {
+    if (!this.invidiousClient) {
+      throw new Error('Invidious client not initialized');
+    }
+
+    const instanceUrls =
+      (this.invidiousClient as any).__instanceUrls ||
+      (Array.isArray(this.invidiousOptions.instanceUrls)
+        ? this.invidiousOptions.instanceUrls
+        : [this.invidiousOptions.instanceUrls]);
+
+    let lastError: Error | null = null;
+
+    // Try each instance in order
+    for (let i = 0; i < instanceUrls.length; i++) {
+      const instanceUrl = instanceUrls[i];
+
+      try {
+        // Update the client's base URL to the current instance
+        this.invidiousClient.defaults.baseURL = instanceUrl;
+        (this.invidiousClient as any).__currentInstanceIndex = i;
+
+        this.log('info', `Trying Invidious instance: ${instanceUrl}`);
+        return await operation(this.invidiousClient, instanceUrl);
+      } catch (error) {
+        this.log('error', `Failed with Invidious instance ${instanceUrl}`, error);
+        lastError = error as Error;
+
+        // Continue to the next instance
+      }
+    }
+
+    // If we get here, all instances failed
+    throw lastError || new Error('All Invidious instances failed');
   }
 
   /**
@@ -278,18 +469,49 @@ export class YouTubeTranscriptApi {
   ): Promise<TranscriptResponse> {
     const startTotal = Date.now();
     const timings: Record<string, number> = {};
+    const videoId = YouTubeTranscriptApi.getVideoId(videoIdOrUrl);
 
-    const logPerformance = (label: string, startTime: number) => {
+    const logPerformance = (step: string, startTime: number) => {
       const duration = Date.now() - startTime;
-      timings[label] = duration;
-      this.log('performance', `${label}: ${duration}ms`);
+      timings[step] = duration;
+      this.log('performance', `${step}: ${duration}ms`);
     };
 
-    const videoId = YouTubeTranscriptApi.getVideoId(videoIdOrUrl);
-    const htmlCacheKey = `html:${videoId}`;
-    const transcriptCacheKey = `transcript:${videoId}:${languages.join(',')}:${preserveFormatting}`;
+    // Determine if we should try Invidious first based on conditions:
+    // Invidious option is enabled and client is available
+    const shouldTryInvidiousFirst = this.invidiousOptions.enabled && this.invidiousClient;
+
+    // If we should try Invidious first, do that before attempting YouTube
+    if (shouldTryInvidiousFirst) {
+      this.log('info', `Attempting to get transcript via Invidious first for video ${videoId}`);
+      const startInvidiousFetch = Date.now();
+
+      try {
+        const response = await this.fetchTranscriptFromInvidious(
+          videoId,
+          languages,
+          preserveFormatting,
+          formatter,
+        );
+
+        logPerformance('Invidious First Attempt', startInvidiousFetch);
+        this.log('info', `Successfully fetched transcript from Invidious for video ${videoId}`);
+
+        return response;
+      } catch (invidiousError) {
+        this.log(
+          'error',
+          `Invidious first attempt failed for video ${videoId}, falling back to YouTube`,
+          invidiousError,
+        );
+        // Fall back to normal YouTube fetching process
+      }
+    }
 
     try {
+      const htmlCacheKey = `html:${videoId}`;
+      const transcriptCacheKey = `transcript:${videoId}:${languages.join(',')}:${preserveFormatting}`;
+
       // Check cache for transcript
       const cachedTranscript = this.cache.transcript.get(transcriptCacheKey);
       if (this.isCacheValid(cachedTranscript)) {
@@ -382,96 +604,286 @@ export class YouTubeTranscriptApi {
 
       return response;
     } catch (error) {
-      this.log('error', `Failed to fetch transcript for video ${videoId}`, error);
-      throw error;
-    }
-  }
+      // If YouTube fetch fails and Invidious fallback is enabled (and we haven't tried it yet), try Invidious
+      if (this.invidiousOptions.enabled && this.invidiousClient && !shouldTryInvidiousFirst) {
+        this.log('info', `YouTube fetch failed, falling back to Invidious for video ${videoId}`);
+        const startInvidiousFetch = Date.now();
 
-  /**
-   * Fetches transcripts for multiple videos in batch
-   * @param videoIds Array of video IDs or URLs
-   * @param options Batch options including languages, formatting preferences
-   * @returns Object with successful transcripts and failed items with errors
-   */
-  public async fetchTranscripts(
-    videoIds: string[],
-    options: BatchTranscriptOptions = {},
-  ): Promise<{
-    results: Record<string, TranscriptResponse>;
-    errors: Record<string, Error>;
-  }> {
-    const {
-      languages = ['en'],
-      preserveFormatting = false,
-      formatter,
-      stopOnError = false,
-    } = options;
-
-    const results: Record<string, TranscriptResponse> = {};
-    const errors: Record<string, Error> = {};
-
-    // Log batch processing start
-    this.log('performance', `Starting batch processing of ${videoIds.length} videos`);
-    const batchStartTime = Date.now();
-
-    // Process videos in batches of 3 to avoid overwhelming the network
-    const batchSize = 3;
-    for (let i = 0; i < videoIds.length; i += batchSize) {
-      const batch = videoIds.slice(i, i + batchSize);
-
-      this.log(
-        'info',
-        `Processing batch ${Math.floor(i / batchSize) + 1} of ${Math.ceil(videoIds.length / batchSize)}`,
-      );
-      const batchStartTime = Date.now();
-
-      // Process batch in parallel
-      const batchPromises = batch.map(async videoIdOrUrl => {
         try {
-          const videoId = YouTubeTranscriptApi.getVideoId(videoIdOrUrl);
-          const transcript = await this.fetchTranscript(
+          const response = await this.fetchTranscriptFromInvidious(
             videoId,
             languages,
             preserveFormatting,
             formatter,
           );
-          return { videoId, transcript, error: null };
-        } catch (error) {
-          const videoId = YouTubeTranscriptApi.getVideoId(videoIdOrUrl);
-          return { videoId, transcript: null, error: error as Error };
-        }
-      });
 
-      const batchResults = await Promise.all(batchPromises);
-      const batchDuration = Date.now() - batchStartTime;
-      this.log('performance', `Batch completed in ${batchDuration}ms`);
+          logPerformance('Invidious Fallback', startInvidiousFetch);
+          this.log('info', `Successfully fetched transcript from Invidious for video ${videoId}`);
 
-      // Process batch results
-      for (const result of batchResults) {
-        if (result.error) {
-          errors[result.videoId] = result.error;
-          this.log('error', `Failed to fetch transcript for ${result.videoId}`, result.error);
-
-          if (stopOnError) {
-            // Stop processing if requested
-            this.log('info', 'Stopping batch processing due to error (stopOnError=true)');
-            return { results, errors };
-          }
-        } else if (result.transcript) {
-          results[result.videoId] = result.transcript;
-          this.log('info', `Successfully fetched transcript for ${result.videoId}`);
+          return response;
+        } catch (invidiousError) {
+          this.log('error', `Invidious fallback also failed for video ${videoId}`, invidiousError);
+          throw error; // Throw the original YouTube error
         }
       }
+
+      // If Invidious is not enabled or also failed, rethrow the original error
+      throw error;
+    }
+  }
+
+  /**
+   * Fetches a transcript from Invidious API
+   * @param videoId YouTube video ID
+   * @param languages List of language codes to search for (in order of preference)
+   * @param preserveFormatting Whether to keep select HTML text formatting
+   * @param formatter Optional formatter to format the output (json, text, srt, webvtt)
+   * @returns TranscriptResponse with data from Invidious
+   * @private
+   */
+  private async fetchTranscriptFromInvidious(
+    videoId: string,
+    languages: string[] = ['en'],
+    preserveFormatting: boolean = false,
+    formatter?: FormatterType,
+  ): Promise<TranscriptResponse> {
+    if (!this.invidiousClient) {
+      throw new Error('Invidious client not initialized');
     }
 
-    const totalDuration = Date.now() - batchStartTime;
-    this.log('performance', `Batch processing completed in ${totalDuration}ms`, {
-      totalVideos: videoIds.length,
-      successful: Object.keys(results).length,
-      failed: Object.keys(errors).length,
-    });
+    return this.tryWithInvidiousInstances(async (client, instanceUrl) => {
+      try {
+        // First get video info from Invidious
+        const videoResponse = await client.get(`/api/v1/videos/${videoId}`).catch(error => {
+          this.log(
+            'error',
+            `Failed to fetch video info from Invidious for video ${videoId}`,
+            error,
+          );
+          throw new VideoUnavailable(videoId);
+        });
 
-    return { results, errors };
+        if (!videoResponse || !videoResponse.data) {
+          this.log('error', `Empty response from Invidious for video ${videoId}`);
+          throw new VideoUnavailable(videoId);
+        }
+
+        const videoData = videoResponse.data;
+
+        // Extract metadata
+        const metadata: VideoMetadata = {
+          id: videoData.videoId,
+          title: videoData.title,
+          description: videoData.description || '',
+          author: videoData.author,
+          channelId: videoData.authorId,
+          lengthSeconds: videoData.lengthSeconds || 0,
+          viewCount: parseInt(videoData.viewCount || '0', 10),
+          isPrivate: false, // Invidious doesn't provide this info
+          isLiveContent: videoData.liveNow || false,
+          publishDate: videoData.published || '',
+          category: videoData.genre || '',
+          keywords: videoData.keywords || [],
+          thumbnails:
+            videoData.videoThumbnails?.map((thumb: any) => ({
+              url: thumb.url,
+              width: thumb.width,
+              height: thumb.height,
+            })) || [],
+        };
+
+        // Get available captions from Invidious
+        let captionsData;
+        try {
+          const captionsResponse = await client.get(`/api/v1/captions/${videoId}`);
+          captionsData = captionsResponse.data;
+
+          if (!captionsData || !Array.isArray(captionsData.captions)) {
+            this.log('error', `Invalid captions data from Invidious for video ${videoId}`);
+            throw new NoTranscriptFound(videoId, languages);
+          }
+        } catch (error) {
+          this.log('error', `Failed to fetch captions from Invidious for video ${videoId}`, error);
+          throw new NoTranscriptFound(videoId, languages);
+        }
+
+        // Find the best matching language
+        let selectedCaptionTrack = null;
+        for (const language of languages) {
+          const track = captionsData.captions?.find((cap: any) => cap.languageCode === language);
+          if (track) {
+            selectedCaptionTrack = track;
+            break;
+          }
+        }
+
+        if (!selectedCaptionTrack) {
+          throw new NoTranscriptFound(videoId, languages);
+        }
+
+        // Fetch the actual transcript data using the URL provided in the captions response
+        let vttContent;
+        try {
+          // The URL is provided in the captionTrack from the API response
+          const captionUrl = selectedCaptionTrack.url;
+          if (!captionUrl) {
+            throw new Error(
+              `No caption URL found for language ${selectedCaptionTrack.languageCode}`,
+            );
+          }
+
+          // The URL in the response is relative, we need to use it directly with the client
+          const transcriptResponse = await client.get(captionUrl);
+          vttContent = transcriptResponse.data;
+
+          if (!vttContent || typeof vttContent !== 'string') {
+            this.log('error', `Invalid transcript data from Invidious for video ${videoId}`);
+            throw new Error('Invalid transcript data format from Invidious');
+          }
+        } catch (error) {
+          this.log(
+            'error',
+            `Failed to fetch transcript data from Invidious for video ${videoId}`,
+            error,
+          );
+          throw new NoTranscriptFound(videoId, languages);
+        }
+
+        // Parse the WebVTT format returned by Invidious
+        const snippets: TranscriptSnippet[] = this.parseWebVTT(vttContent, preserveFormatting);
+
+        if (snippets.length === 0) {
+          this.log('error', `Empty transcript from Invidious for video ${videoId}`);
+          throw new NoTranscriptFound(videoId, languages);
+        }
+
+        const transcript: Transcript = {
+          snippets,
+          videoId,
+          language: selectedCaptionTrack.label || selectedCaptionTrack.languageCode,
+          languageCode: selectedCaptionTrack.languageCode,
+          isGenerated: selectedCaptionTrack.kind === 'asr',
+        };
+
+        // Create the response object
+        const response: TranscriptResponse = {
+          transcript,
+          metadata,
+          formattedText: undefined,
+        };
+
+        // Apply formatter if specified
+        if (formatter) {
+          response.formattedText = FormatterFactory.create(formatter).format(transcript);
+        }
+
+        // Cache the result
+        const transcriptCacheKey = `transcript:${videoId}:${languages.join(',')}:${preserveFormatting}`;
+        this.cache.transcript.set(transcriptCacheKey, {
+          data: transcript,
+          timestamp: Date.now(),
+        });
+
+        return response;
+      } catch (error) {
+        this.log('error', `Error fetching from Invidious for video ${videoId}`, error);
+        throw error; // Rethrow to allow trying the next instance
+      }
+    });
+  }
+
+  /**
+   * Parses WebVTT format returned by Invidious
+   * @param vttContent The WebVTT content as string
+   * @param preserveFormatting Whether to preserve HTML formatting
+   * @returns Array of transcript snippets
+   */
+  private parseWebVTT(vttContent: string, preserveFormatting: boolean): TranscriptSnippet[] {
+    const snippets: TranscriptSnippet[] = [];
+
+    // Split by lines and process
+    const lines = vttContent.split('\n');
+    let i = 0;
+
+    // Skip header (usually WEBVTT or empty lines at the start)
+    while (
+      i < lines.length &&
+      (lines[i].trim() === '' || lines[i].trim().startsWith('WEBVTT') || !lines[i].includes('-->'))
+    ) {
+      i++;
+    }
+
+    // Process cues
+    while (i < lines.length) {
+      const line = lines[i].trim();
+
+      // Check if this is a timestamp line
+      if (line.includes('-->')) {
+        const times = line.split('-->').map(t => t.trim());
+        if (times.length === 2) {
+          const startTime = this.timeToSeconds(times[0]);
+          const endTime = this.timeToSeconds(times[1]);
+          const duration = endTime - startTime;
+
+          // Get the text content (usually in the next line)
+          i++;
+          let textContent = '';
+
+          // Collect all text lines until we hit an empty line or another timestamp
+          while (i < lines.length && lines[i].trim() !== '' && !lines[i].includes('-->')) {
+            if (textContent) textContent += '\n';
+            textContent += lines[i].trim();
+            i++;
+          }
+
+          // Clean the text if needed
+          const text = preserveFormatting ? textContent : textContent.replace(/<[^>]*>/g, '');
+
+          if (text.trim()) {
+            snippets.push({
+              text: text.trim(),
+              start: startTime,
+              duration: duration,
+            });
+          }
+
+          // Skip any empty lines before the next timestamp
+          while (i < lines.length && lines[i].trim() === '') {
+            i++;
+          }
+
+          continue;
+        }
+      }
+
+      // If we're here, move to the next line
+      i++;
+    }
+
+    return snippets;
+  }
+
+  /**
+   * Converts WebVTT timestamp to seconds
+   * @param timestamp WebVTT timestamp (HH:MM:SS.mmm)
+   * @returns Time in seconds
+   */
+  private timeToSeconds(timestamp: string): number {
+    const parts = timestamp.split(':');
+    let seconds = 0;
+
+    if (parts.length === 3) {
+      // HH:MM:SS.mmm
+      seconds = parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]);
+    } else if (parts.length === 2) {
+      // MM:SS.mmm
+      seconds = parseFloat(parts[0]) * 60 + parseFloat(parts[1]);
+    } else {
+      // Invalid format
+      seconds = 0;
+    }
+
+    return seconds;
   }
 
   /**
