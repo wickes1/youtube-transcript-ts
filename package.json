@@ -1,6 +1,6 @@
 {
   "name": "youtube-transcript-ts",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "TypeScript implementation of YouTube Transcript API",
   "type": "module",
   "main": "dist/index.js",
