@@ -31,7 +31,7 @@ async function example2() {
     const videoId = 'dQw4w9WgXcQ';
 
     // Get transcript with formatted text
-    const response = await api.fetchTranscript(videoId, ['en'], false, 'json');
+    const response = await api.fetchTranscript(videoId, { languages: ['en'], formatter: 'json' });
 
     // Access metadata (always included)
     console.log(`Video title: ${response.metadata.title}`);

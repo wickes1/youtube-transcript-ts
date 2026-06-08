@@ -1,7 +1,17 @@
 // Main API
-export { default, YouTubeTranscriptApi, YouTubeTranscriptApiOptions } from './api';
+export { default, YouTubeTranscriptApi, TranscriptList, TranscriptEntry } from './api';
 
-// Types exports
+// Public option / configuration types
+export type {
+  YouTubeTranscriptApiOptions,
+  FetchTranscriptOptions,
+  CacheOptions,
+  LoggerOptions,
+  InvidiousOptions,
+  ProxyOptions,
+} from './api';
+
+// Data types
 export type {
   Transcript,
   TranscriptSnippet,
@@ -14,13 +24,13 @@ export type {
 // Formatters
 export {
   Formatter,
-  FormatterType,
   FormatterFactory,
   JSONFormatter,
   TextFormatter,
   SRTFormatter,
   WebVTTFormatter,
 } from './formatters';
+export type { FormatterType } from './formatters';
 
 // Errors
 export {
@@ -30,4 +40,5 @@ export {
   NotTranslatable,
   TranslationLanguageNotAvailable,
   IpBlocked,
+  RequestFailed,
 } from './types';

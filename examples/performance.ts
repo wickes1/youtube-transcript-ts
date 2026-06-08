@@ -59,12 +59,7 @@ async function performanceExample() {
     console.log('---------------------------------------');
 
     // First fetch with performance logging enabled
-    const results1 = await api.fetchTranscript(
-      videoIds[0],
-      ['en'], // Languages
-      false, // Preserve formatting
-      undefined, // No formatter
-    );
+    const results1 = await api.fetchTranscript(videoIds[0], { languages: ['en'] });
 
     console.log(`\nFetched transcript for "${results1.metadata.title}" successfully!`);
     console.log(`Transcript length: ${results1.transcript.snippets.length} snippets`);
@@ -73,12 +68,7 @@ async function performanceExample() {
     console.log('----------------------------------------------');
 
     // Second fetch should use cached data
-    const results2 = await api.fetchTranscript(
-      videoIds[0],
-      ['en'], // Languages
-      false, // Preserve formatting
-      undefined, // No formatter
-    );
+    const results2 = await api.fetchTranscript(videoIds[0], { languages: ['en'] });
 
     console.log(`\nFetched transcript for "${results2.metadata.title}" again successfully!`);
     console.log(`Transcript length: ${results2.transcript.snippets.length} snippets`);
@@ -86,12 +76,7 @@ async function performanceExample() {
     console.log('\n3. Custom logger example:');
     console.log('------------------------');
 
-    await customLoggerApi.fetchTranscript(
-      videoIds[1], // Different video
-      ['en'],
-      false,
-      undefined,
-    );
+    await customLoggerApi.fetchTranscript(videoIds[1], { languages: ['en'] });
 
     console.log('\n4. Clearing cache and refetching:');
     console.log('------------------------------');
@@ -101,12 +86,7 @@ async function performanceExample() {
     console.log('Cache cleared');
 
     console.time('Refetch after cache clear');
-    const results3 = await api.fetchTranscript(
-      videoIds[0],
-      ['en'], // Languages
-      false, // Preserve formatting
-      undefined, // No formatter
-    );
+    const results3 = await api.fetchTranscript(videoIds[0], { languages: ['en'] });
     console.timeEnd('Refetch after cache clear');
 
     console.log(`\nFetched transcript for "${results3.metadata.title}" without cache!`);
@@ -127,12 +107,7 @@ async function performanceExample() {
     console.log('Cache should be expired now, refetching...');
 
     console.time('Refetch after cache expiration');
-    const results4 = await api.fetchTranscript(
-      videoIds[0],
-      ['en'], // Languages
-      false, // Preserve formatting
-      undefined, // No formatter
-    );
+    const results4 = await api.fetchTranscript(videoIds[0], { languages: ['en'] });
     console.timeEnd('Refetch after cache expiration');
 
     console.log(`\nFetched transcript for "${results4.metadata.title}" after cache expiration!`);
@@ -144,7 +119,7 @@ async function performanceExample() {
     api.setLoggerOptions({ enabled: false });
     console.log('Logging disabled');
 
-    await api.fetchTranscript(videoIds[0], ['en'], false, undefined);
+    await api.fetchTranscript(videoIds[0], { languages: ['en'] });
 
     console.log('Fetch completed with logging disabled (no logs above)');
   } catch (error) {

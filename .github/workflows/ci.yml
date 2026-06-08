@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+# Cancel superseded runs on the same ref to save CI minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      # Verify the published types resolve under both ESM and CJS module resolution
+      # (catches FalseESM/FalseCJS from a mis-shaped exports map). Must run after Build.
+      - name: Check types (are-the-types-wrong)
+        run: pnpm exec attw --pack
+
+      - name: Test (coverage)
+        run: pnpm test:coverage
+
+      # Packaged-output ESM/CJS import + construct gate. Runs against the freshly
+      # built dist/ and is the check that would have caught the shipped criticals
+      # (extensionless ESM re-export -> ERR_MODULE_NOT_FOUND; require in an ESM
+      # module -> "require is not defined"). Must run after Build.
+      - name: Smoke (packaged dist import)
+        run: pnpm smoke

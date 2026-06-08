@@ -2,6 +2,16 @@
 
 A TypeScript library to retrieve transcripts/subtitles from YouTube videos. Supports auto-generated subtitles, multiple languages, and formatting options.
 
+## Requirements
+
+| Requirement    | Value                         |
+| -------------- | ----------------------------- |
+| Node           | >= 18                         |
+| Module systems | ESM and CommonJS (dual build) |
+| Types          | Bundled (`.d.ts`)             |
+
+The package ships both an ESM (`import`) and a CJS (`require`) entry point from a single install. TypeScript types are included.
+
 ## Installation
 
 ```bash
@@ -17,25 +27,35 @@ yarn add youtube-transcript-ts
 
 ## Quick Start
 
+ESM (`import`):
+
 ```typescript
 import { YouTubeTranscriptApi } from 'youtube-transcript-ts';
 
-// Create API instance with default configuration
 const api = new YouTubeTranscriptApi();
 
-// Get transcript using video ID or URL
+// Pass a video ID or a full YouTube URL.
 const response = await api.fetchTranscript('dQw4w9WgXcQ');
 // or: await api.fetchTranscript('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
 
-// Access transcript data
+// Transcript data
 console.log(`Found ${response.transcript.snippets.length} lines`);
 response.transcript.snippets.slice(0, 3).forEach(snippet => {
   console.log(`[${snippet.start.toFixed(1)}s]: ${snippet.text}`);
 });
 
-// Access video metadata (always included)
+// Video metadata (always included)
 console.log(`Title: ${response.metadata.title}`);
 console.log(`Author: ${response.metadata.author}`);
+```
+
+CommonJS (`require`):
+
+```javascript
+const { YouTubeTranscriptApi } = require('youtube-transcript-ts');
+
+const api = new YouTubeTranscriptApi();
+const response = await api.fetchTranscript('dQw4w9WgXcQ');
 ```
 
 ## Features
@@ -87,18 +107,19 @@ const api = new YouTubeTranscriptApi({
   },
 });
 
-// Multiple fallback instances for improved reliability
+// Multiple fallback instances for improved reliability.
+// Failover requires more than one distinct host — the list is tried in order.
 const apiWithFallbacks = new YouTubeTranscriptApi({
   invidious: {
     enabled: true,
-    instanceUrls: ['https://yewtu.be'],
+    instanceUrls: ['https://yewtu.be', 'https://invidious.example.org'],
     timeout: 8000, // custom timeout in ms
   },
 });
 
 // Configure Invidious after initialization
-const api = new YouTubeTranscriptApi();
-api.setInvidiousOptions({
+const apiLater = new YouTubeTranscriptApi();
+apiLater.setInvidiousOptions({
   enabled: true,
   instanceUrls: 'https://yewtu.be',
 });
@@ -130,15 +151,15 @@ const apiWithSameProxy = new YouTubeTranscriptApi({
 });
 
 // Configure proxy after initialization
-const api = new YouTubeTranscriptApi();
-api.setProxyOptions({
+const apiLater = new YouTubeTranscriptApi();
+apiLater.setProxyOptions({
   enabled: true,
   http: 'http://username:password@http-proxy.com:8080',
   https: 'http://username:password@https-proxy.com:8443',
 });
 
 // Disable proxy
-api.setProxyOptions({
+apiLater.setProxyOptions({
   enabled: false,
 });
 ```
@@ -147,17 +168,23 @@ api.setProxyOptions({
 
 ```typescript
 // Get transcript in German, fallback to English
-const response = await api.fetchTranscript('VIDEO_ID', ['de', 'en']);
+const response = await api.fetchTranscript('VIDEO_ID', { languages: ['de', 'en'] });
 console.log(`Language: ${response.transcript.language}`);
 ```
 
 ### Formatting Options
 
+`fetchTranscript` takes an options object: `{ languages?, preserveFormatting?, formatter? }`. Available formats: `text`, `json`, `srt`, `webvtt`.
+
 ```typescript
-// Available formats: 'text', 'json', 'srt', 'webvtt'
-const textResponse = await api.fetchTranscript('VIDEO_ID', ['en'], false, 'text');
+const textResponse = await api.fetchTranscript('VIDEO_ID', {
+  languages: ['en'],
+  formatter: 'text',
+});
 console.log(textResponse.formattedText); // Plain text string
 ```
+
+> The positional form `fetchTranscript(id, languages, preserveFormatting, formatter)` is deprecated (boolean trap) and may be removed in a future major. Prefer the options object.
 
 ### Cookie Authentication for Age-Restricted Videos
 
@@ -171,9 +198,19 @@ api.setCookies({
 
 ## Error Handling
 
-The API throws specific error types for different failure cases:
+The API throws specific error types for different failure cases. Import the ones you check against:
 
 ```typescript
+import {
+  YouTubeTranscriptApi,
+  VideoUnavailable,
+  NoTranscriptFound,
+  TranscriptsDisabled,
+  IpBlocked,
+} from 'youtube-transcript-ts';
+
+const api = new YouTubeTranscriptApi();
+
 try {
   const transcript = await api.fetchTranscript('VIDEO_ID');
 } catch (error) {

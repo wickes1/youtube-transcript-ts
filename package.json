@@ -1,18 +1,31 @@
 {
   "name": "youtube-transcript-ts",
-  "version": "1.3.0",
+  "version": "2.0.0",
+  "packageManager": "pnpm@10.4.1",
   "description": "TypeScript implementation of YouTube Transcript API",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wickes1/youtube-transcript-ts.git"
@@ -22,10 +35,9 @@
   },
   "homepage": "https://github.com/wickes1/youtube-transcript-ts#readme",
   "scripts": {
-    "build": "tsc",
     "clean": "rm -rf dist",
-    "prebuild": "pnpm clean",
-    "prepare": "husky",
+    "build": "tsup",
+    "smoke": "node scripts/smoke.mjs",
     "test": "jest",
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
@@ -33,9 +45,12 @@
     "lint:fix": "eslint \"{src,__tests__,examples}/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\" \"__tests__/**/*.ts\" \"examples/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"__tests__/**/*.ts\" \"examples/**/*.ts\"",
-    "check": "pnpm lint && pnpm format:check && pnpm test",
-    "check:all": "pnpm lint && pnpm format:check && pnpm test:coverage",
-    "precommit": "pnpm check"
+    "typecheck": "tsc --noEmit",
+    "check:types-pack": "attw --pack",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test",
+    "prepare": "husky || true",
+    "prepack": "pnpm clean && pnpm build",
+    "prepublishOnly": "pnpm check && pnpm build && pnpm smoke"
   },
   "keywords": [
     "youtube",
@@ -46,12 +61,13 @@
   "author": "wickes1",
   "license": "MIT",
   "dependencies": {
-    "axios": "^1.6.7",
+    "axios": "^1.17.0",
     "html-entities": "^2.4.0",
     "http-proxy-agent": "^7.0.2",
     "https-proxy-agent": "^7.0.6"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.2",
     "@commitlint/cli": "^19.8.0",
     "@commitlint/config-conventional": "^19.8.0",
     "@types/jest": "^29.5.14",
@@ -64,8 +80,15 @@
     "eslint-plugin-prettier": "^5.2.3",
     "husky": "^9.1.7",
     "jest": "^29.7.0",
+    "lint-staged": "^17.0.7",
     "prettier": "^3.5.3",
     "ts-jest": "^29.1.2",
+    "tsup": "^8.5.1",
     "typescript": "^5.3.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

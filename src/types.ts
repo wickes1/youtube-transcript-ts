@@ -47,8 +47,6 @@ export interface TranscriptResponse {
   formattedText?: string;
 }
 
-export type FormatterType = 'text' | 'json' | 'srt' | 'webvtt';
-
 export interface YouTubeTranscriptError {
   videoId: string;
 }
@@ -98,6 +96,35 @@ export class IpBlocked extends Error implements YouTubeTranscriptError {
   constructor(public videoId: string) {
     super(`IP blocked for video ${videoId}`);
     this.name = 'IpBlocked';
+  }
+}
+
+/**
+ * A retryable transport failure (timeout or 5xx) while fetching from YouTube/Invidious.
+ * Distinct from {@link VideoUnavailable} so consumers can implement retry/backoff.
+ * The originating error is preserved on `cause`.
+ */
+export class RequestFailed extends Error implements YouTubeTranscriptError {
+  /** True for transient failures that may succeed on retry. */
+  public readonly retryable = true;
+
+  /**
+   * The originating error (e.g. the underlying axios error). Declared as a real
+   * member so it type-resolves on consumers using a pre-ES2022 lib (where
+   * `Error.cause` does not exist).
+   */
+  public readonly cause?: unknown;
+
+  constructor(
+    public videoId: string,
+    reason?: string,
+    options?: { cause?: unknown },
+  ) {
+    super(`Request failed for video ${videoId}${reason ? `: ${reason}` : ''}`);
+    this.name = 'RequestFailed';
+    if (options && 'cause' in options) {
+      this.cause = options.cause;
+    }
   }
 }
 

@@ -124,8 +124,6 @@ export class WebVTTFormatter extends TextBasedFormatter {
   }
 }
 
-export type FormatterType = 'json' | 'text' | 'srt' | 'webvtt';
-
 export class FormatterFactory {
   static readonly TYPES = {
     json: JSONFormatter,
@@ -146,3 +144,9 @@ export class FormatterFactory {
     return new FormatterClass();
   }
 }
+
+/**
+ * Supported formatter identifiers. Single source of truth derived from
+ * {@link FormatterFactory.TYPES} so the union can never drift from the runtime map.
+ */
+export type FormatterType = keyof typeof FormatterFactory.TYPES;

@@ -1,0 +1,65 @@
+name: Bug report
+description: Report something that does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please fill in the fields below so the issue is reproducible.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Minimal code that triggers the bug. Include the video ID if relevant.
+      render: typescript
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Error output
+      description: The full error message and stack trace, if any.
+      render: shell
+    validations:
+      required: false
+  - type: dropdown
+    id: module-system
+    attributes:
+      label: Module system
+      description: How are you importing the package?
+      options:
+        - ESM (import)
+        - CommonJS (require)
+        - TypeScript
+    validations:
+      required: true
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      placeholder: e.g. 2.0.0
+    validations:
+      required: true
+  - type: input
+    id: node-version
+    attributes:
+      label: Node.js version
+      placeholder: e.g. 20.11.0
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I am on a supported Node.js version (>=18).
+          required: true

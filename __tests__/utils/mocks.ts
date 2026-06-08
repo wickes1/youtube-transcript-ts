@@ -1,137 +1,103 @@
 /* eslint-env jest */
 /**
- * Mock utilities for testing - this is not a test file
+ * Mock utilities for testing - this is not a test file.
+ *
+ * The success HTML uses YouTube's real key order with `videoDetails` AFTER `captions`
+ * and is minified to a single line so the production brace-depth scanner (which no longer
+ * relies on a `,"videoDetails"` delimiter) parses it. Axios responses are shaped like real
+ * axios results: a `status` field plus `data`, and error cases reject with an axios-shaped
+ * error so `axios.isAxiosError` routing is exercised.
  */
+import type { AxiosError } from 'axios';
+
+// A minified ytInitialPlayerResponse with captions BEFORE videoDetails (YouTube's real order),
+// and a description containing `};` to exercise the brace-depth scanner.
+const validPlayerResponse = JSON.stringify({
+  captions: {
+    playerCaptionsTracklistRenderer: {
+      captionTracks: [
+        {
+          baseUrl: 'https://www.youtube.com/api/timedtext?lang=en&v=dQw4w9WgXcQ',
+          name: { simpleText: 'English' },
+          languageCode: 'en',
+          kind: '',
+          isTranslatable: true,
+        },
+        {
+          baseUrl: 'https://www.youtube.com/api/timedtext?lang=es&v=dQw4w9WgXcQ',
+          name: { simpleText: 'Spanish' },
+          languageCode: 'es',
+          kind: '',
+          isTranslatable: true,
+        },
+      ],
+      translationLanguages: [
+        { languageCode: 'de', languageName: { simpleText: 'German' } },
+        { languageCode: 'fr', languageName: { simpleText: 'French' } },
+      ],
+    },
+  },
+  microformat: {
+    playerMicroformatRenderer: {
+      publishDate: '2009-10-25',
+      category: 'Music',
+    },
+  },
+  videoDetails: {
+    videoId: 'dQw4w9WgXcQ',
+    title: 'Rick Astley - Never Gonna Give You Up (Official Music Video)',
+    lengthSeconds: '213',
+    author: 'Rick Astley',
+    channelId: 'UCuAXFkgsw1L7xaCfnd5JJOw',
+    shortDescription: 'Official video. Sample code: const f = () => { return 42; };',
+    viewCount: '1234567890',
+    isPrivate: false,
+    isLiveContent: false,
+  },
+});
+
+// A player response with NO captions field (transcripts effectively disabled).
+const noCaptionsPlayerResponse = JSON.stringify({
+  playabilityStatus: { status: 'OK' },
+  videoDetails: {
+    videoId: 'no-transcripts',
+    title: 'Video without Transcripts',
+    lengthSeconds: '120',
+    author: 'Test Channel',
+    viewCount: '1000',
+  },
+});
 
 // Mock HTML responses for different scenarios
 export const mockHtmlResponses = {
-  /* Note: the HTML structure and JSON data must match what the API expects to parse */
-  validVideo: `
-    <html>
-      <head>
-        <title>Rick Astley - Never Gonna Give You Up (Official Music Video)</title>
-      </head>
-      <body>
-        <script>
-          ytInitialPlayerResponse = {
-            "videoDetails": {
-              "videoId": "dQw4w9WgXcQ",
-              "title": "Rick Astley - Never Gonna Give You Up (Official Music Video)",
-              "lengthSeconds": "213",
-              "author": "Rick Astley",
-              "channelId": "UCuAXFkgsw1L7xaCfnd5JJOw",
-              "shortDescription": "Official video for Rick Astley's Never Gonna Give You Up",
-              "viewCount": "1234567890",
-              "isPrivate": false,
-              "isLiveContent": false
-            },
-            "captions": {
-              "playerCaptionsTracklistRenderer": {
-                "captionTracks": [
-                  {
-                    "baseUrl": "https://www.youtube.com/api/timedtext?lang=en&v=dQw4w9WgXcQ",
-                    "name": { "simpleText": "English" },
-                    "languageCode": "en",
-                    "kind": "",
-                    "isTranslatable": true
-                  },
-                  {
-                    "baseUrl": "https://www.youtube.com/api/timedtext?lang=es&v=dQw4w9WgXcQ",
-                    "name": { "simpleText": "Spanish" },
-                    "languageCode": "es",
-                    "kind": "",
-                    "isTranslatable": true
-                  }
-                ],
-                "translationLanguages": [
-                  { "languageCode": "de", "languageName": { "simpleText": "German" } },
-                  { "languageCode": "fr", "languageName": { "simpleText": "French" } }
-                ]
-              }
-            },
-            "microformat": {
-              "playerMicroformatRenderer": {
-                "publishDate": "2009-10-25",
-                "category": "Music"
-              }
-            }
-          };
-        </script>
-      </body>
-    </html>
-  `,
-  noTranscripts: `
-    <html>
-      <head>
-        <title>Video without Transcripts</title>
-      </head>
-      <body>
-        <script>
-          ytInitialPlayerResponse = {
-            videoDetails: {
-              videoId: 'no-transcripts',
-              title: 'Video without Transcripts',
-              lengthSeconds: '120',
-              author: 'Test Channel',
-              viewCount: '1000'
-            },
-            // No captions field
-          };
-        </script>
-      </body>
-    </html>
-  `,
-  unavailableVideo: `
-    <html>
-      <head>
-        <title>Video Unavailable</title>
-      </head>
-      <body>
-        <div id="player-unavailable">
-          <h1>This video is unavailable</h1>
-        </div>
-      </body>
-    </html>
-  `,
-  ipBlocked: `
-    <html>
-      <head>
-        <title>IP Blocked</title>
-      </head>
-      <body>
-        <div id="error-screen">
-          <div id="creator-editor-templates"></div>
-          <div id="unavailable-submessage">This video is not available in your country.</div>
-        </div>
-      </body>
-    </html>
-  `,
+  validVideo: `<!DOCTYPE html><html><head><title>Rick Astley</title></head><body><script>var ytInitialPlayerResponse = ${validPlayerResponse};</script></body></html>`,
+  noTranscripts: `<!DOCTYPE html><html><head><title>No Transcripts</title></head><body><script>var ytInitialPlayerResponse = ${noCaptionsPlayerResponse};</script></body></html>`,
 };
 
-// Mock transcript XML responses
+// Mock transcript XML responses (RAW, with escaped entities to exercise group-only decoding).
 export const mockTranscriptResponses = {
-  english: `<?xml version="1.0" encoding="utf-8" ?>
-    <transcript>
-      <text start="0" dur="4.5">Never gonna give you up</text>
-      <text start="4.5" dur="3.5">Never gonna let you down</text>
-      <text start="8" dur="4">Never gonna run around and desert you</text>
-    </transcript>
-  `,
-  spanish: `<?xml version="1.0" encoding="utf-8" ?>
-    <transcript>
-      <text start="0" dur="4.5">¡Español! Nunca te voy a abandonar</text>
-      <text start="4.5" dur="3.5">Nunca te voy a defraudar</text>
-      <text start="8" dur="4">Nunca voy a correr y abandonarte</text>
-    </transcript>
-  `,
-  formatted: `<?xml version="1.0" encoding="utf-8" ?>
-    <transcript>
-      <text start="0" dur="4.5">Never gonna <i>give</i> you up</text>
-      <text start="4.5" dur="3.5">Never gonna <b>let</b> you down</text>
-      <text start="8" dur="4">Never gonna <u>run</u> around and desert you</text>
-    </transcript>
-  `,
+  english: `<?xml version="1.0" encoding="utf-8" ?><transcript><text start="0" dur="4.5">Never gonna give you up</text><text start="4.5" dur="3.5">Never gonna let you down</text><text start="8" dur="4">Never gonna run around and desert you</text></transcript>`,
+  spanish: `<?xml version="1.0" encoding="utf-8" ?><transcript><text start="0" dur="4.5">Espanol! Nunca te voy a abandonar</text><text start="4.5" dur="3.5">Nunca te voy a defraudar</text></transcript>`,
 };
+
+/**
+ * Build an axios-shaped error (so `axios.isAxiosError` returns true) with the given status.
+ */
+function makeAxiosError(status: number): AxiosError {
+  const error = new Error(`Request failed with status code ${status}`) as AxiosError;
+  error.isAxiosError = true;
+  error.name = 'AxiosError';
+  error.toJSON = () => ({});
+  // Minimal axios response shape.
+  error.response = {
+    status,
+    statusText: '',
+    data: '',
+    headers: {},
+    config: {} as any,
+  };
+  return error;
+}
 
 // Mock implementation for axios
 export const mockAxios = {
@@ -142,29 +108,32 @@ export const mockAxios = {
         const videoId = config?.params?.v;
 
         if (videoId === 'dQw4w9WgXcQ') {
-          return Promise.resolve({ data: mockHtmlResponses.validVideo });
+          return Promise.resolve({ status: 200, data: mockHtmlResponses.validVideo });
         }
         if (videoId === 'no-transcripts') {
-          return Promise.resolve({ data: mockHtmlResponses.noTranscripts });
+          return Promise.resolve({ status: 200, data: mockHtmlResponses.noTranscripts });
         }
         if (videoId === 'unavailable') {
-          return Promise.resolve({ data: mockHtmlResponses.unavailableVideo });
+          // A deleted video: YouTube returns 404.
+          return Promise.reject(makeAxiosError(404));
         }
         if (videoId === 'ip-blocked') {
-          return Promise.resolve({ data: mockHtmlResponses.ipBlocked });
+          // IP block / geo-restriction: 403.
+          return Promise.reject(makeAxiosError(403));
+        }
+        if (videoId === 'rate-limited') {
+          // Throttling: 429 -> must map to retryable RequestFailed, not IpBlocked.
+          return Promise.reject(makeAxiosError(429));
         }
       }
 
       // Handle transcript URL requests
       if (url.includes('api/timedtext')) {
         if (url.includes('lang=en')) {
-          return Promise.resolve({ data: mockTranscriptResponses.english });
+          return Promise.resolve({ status: 200, data: mockTranscriptResponses.english });
         }
         if (url.includes('lang=es')) {
-          return Promise.resolve({ data: mockTranscriptResponses.spanish });
-        }
-        if (url.includes('fmt=srv3')) {
-          return Promise.resolve({ data: mockTranscriptResponses.formatted });
+          return Promise.resolve({ status: 200, data: mockTranscriptResponses.spanish });
         }
       }
 
@@ -196,6 +165,12 @@ export function createTestEnvironment() {
   // Setup axios mock
   const axios = require('axios');
   axios.default.create = mockAxios.create;
+  // The axios automock stubs isAxiosError to return undefined, which would defeat the
+  // library's error-type routing (403 -> IpBlocked, 404 -> VideoUnavailable). Restore a
+  // real implementation keyed on the `isAxiosError` marker our mock errors carry.
+  const realIsAxiosError = (payload: any): boolean => payload?.isAxiosError === true;
+  axios.isAxiosError = realIsAxiosError;
+  axios.default.isAxiosError = realIsAxiosError;
 
   return {
     mockAxios,
