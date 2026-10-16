@@ -228,6 +228,8 @@ try {
 }
 ```
 
+> **Translation is currently unavailable.** YouTube rejects every auto-translation (`tlang`) request that lacks a PO token with HTTP 429, so `TranscriptEntry.translate()` returns an entry whose `fetch()` throws `NotTranslatable`. Fetching transcripts in their original languages is unaffected.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.

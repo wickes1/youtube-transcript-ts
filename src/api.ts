@@ -1734,6 +1734,11 @@ export class TranscriptEntry {
         if (status === 404 || status === 410) {
           throw new VideoUnavailable(this.videoId);
         }
+        // YouTube answers every token-free `tlang` request with 429, so for a translated
+        // entry it means "translation unavailable", not throttling; retrying cannot help.
+        if (status === 429 && new URL(this.url).searchParams.has('tlang')) {
+          throw new NotTranslatable(this.videoId);
+        }
         // Retryable: throttling (429), any transport failure (no response: ECONNRESET/
         // ECONNREFUSED/EPIPE/EAI_AGAIN/ETIMEDOUT/ECONNABORTED), or 5xx. 429 is NOT IpBlocked.
         if (status === 429 || !error.response || (typeof status === 'number' && status >= 500)) {

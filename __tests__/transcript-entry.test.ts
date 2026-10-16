@@ -126,4 +126,19 @@ describe('TranscriptEntry.translate', () => {
     await translated.fetch();
     expect(get).toHaveBeenCalledWith(expect.stringContaining('tlang=de'));
   });
+
+  it('surfaces a 429 on a translated fetch as NotTranslatable, not a retryable failure', async () => {
+    // YouTube 429s every token-free translation request; retry/backoff would loop forever.
+    const get = jest.fn().mockRejectedValue(axiosError({ status: 429 }));
+    const translated = await makeEntry(stubClient(get), translatable).translate('de');
+    await expect(translated.fetch()).rejects.toBeInstanceOf(NotTranslatable);
+  });
+
+  it('keeps a 429 on an untranslated fetch retryable', async () => {
+    const get = jest.fn().mockRejectedValue(axiosError({ status: 429 }));
+    const err = await makeEntry(stubClient(get), translatable)
+      .fetch()
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RequestFailed);
+  });
 });
