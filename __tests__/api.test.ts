@@ -67,6 +67,43 @@ describe('YouTubeTranscriptApi', () => {
     });
   });
 
+  describe('InnerTube caption source', () => {
+    // The watch page's caption URLs are PO-token gated (`exp=xpe`) and return an empty body,
+    // which surfaced as NoTranscriptFound for every video. Captions must come from InnerTube.
+    it('fetches captions from InnerTube URLs, never the PO-token-gated page URLs', async () => {
+      const api = new YouTubeTranscriptApi();
+      await api.fetchTranscript('dQw4w9WgXcQ', { languages: ['en'] });
+
+      const client = (api as any).httpClient;
+      expect(client.post).toHaveBeenCalledWith(
+        'https://www.youtube.com/youtubei/v1/player',
+        expect.objectContaining({ videoId: 'dQw4w9WgXcQ' }),
+        { params: { key: 'test-key' } },
+      );
+      const timedtextUrls = client.get.mock.calls
+        .map(([url]: [string]) => url)
+        .filter((url: string) => url.includes('api/timedtext'));
+      expect(timedtextUrls.length).toBeGreaterThan(0);
+      for (const url of timedtextUrls) {
+        expect(url).not.toContain('exp=xpe');
+        // srv3 is a format the parser cannot read; it must be stripped from InnerTube URLs.
+        expect(url).not.toContain('fmt=srv3');
+      }
+    });
+
+    it('maps an InnerTube bot check to IpBlocked', async () => {
+      const api = new YouTubeTranscriptApi();
+      await expect(api.fetchTranscript('bot-check')).rejects.toBeInstanceOf(IpBlocked);
+    });
+
+    it('maps any other non-OK playability status to VideoUnavailable', async () => {
+      const api = new YouTubeTranscriptApi();
+      await expect(api.fetchTranscript('innertube-unplayable')).rejects.toBeInstanceOf(
+        VideoUnavailable,
+      );
+    });
+  });
+
   describe('error handling', () => {
     it('should throw VideoUnavailable for a deleted video (404)', async () => {
       const api = new YouTubeTranscriptApi();

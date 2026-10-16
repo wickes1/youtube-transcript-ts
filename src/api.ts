@@ -23,6 +23,11 @@ import { HttpProxyAgent } from 'http-proxy-agent';
 import { HttpsProxyAgent } from 'https-proxy-agent';
 
 const WATCH_URL = 'https://www.youtube.com/watch';
+const INNERTUBE_PLAYER_URL = 'https://www.youtube.com/youtubei/v1/player';
+const INNERTUBE_API_KEY_REGEX = /"INNERTUBE_API_KEY":\s*"([a-zA-Z0-9_-]+)"/;
+// Caption URLs embedded in the watch page carry `exp=xpe` and return an empty 200 body unless
+// a PO token is attached. The ANDROID InnerTube client still receives token-free URLs.
+const INNERTUBE_CONTEXT = { client: { clientName: 'ANDROID', clientVersion: '20.10.38' } };
 const USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36,gzip(gfe)';
 
@@ -173,6 +178,8 @@ interface RawVideoDetails {
 }
 
 interface RawPlayerResponse {
+  playabilityStatus?: { status?: string; reason?: string };
+  captions?: { playerCaptionsTracklistRenderer?: RawCaptionsTracklist };
   videoDetails?: RawVideoDetails;
   microformat?: {
     playerMicroformatRenderer?: {
@@ -963,7 +970,7 @@ export class YouTubeTranscriptApi {
 
       // Extract captions data
       const startCaptionsExtract = Date.now();
-      const captionsJson = this.extractCaptionsJson(html, videoId);
+      const captionsJson = await this.fetchCaptionsJson(html, videoId);
       logPerformance('Captions Extract', startCaptionsExtract);
 
       // Build transcript list
@@ -1476,8 +1483,60 @@ export class YouTubeTranscriptApi {
   public async listTranscripts(videoIdOrUrl: string): Promise<TranscriptList> {
     const videoId = YouTubeTranscriptApi.getVideoId(videoIdOrUrl);
     const html = await this.fetchVideoHtml(videoId);
-    const captionsJson = this.extractCaptionsJson(html, videoId);
+    const captionsJson = await this.fetchCaptionsJson(html, videoId);
     return TranscriptList.build(this.httpClient, videoId, captionsJson);
+  }
+
+  /**
+   * Resolve the caption tracklist via the InnerTube player API, whose caption URLs are
+   * fetchable without a PO token (the watch page's own URLs are not).
+   * @private
+   */
+  private async fetchCaptionsJson(html: string, videoId: string): Promise<RawCaptionsTracklist> {
+    const apiKey = INNERTUBE_API_KEY_REGEX.exec(html)?.[1];
+    if (!apiKey) {
+      // No key means a captcha / consent / error page: the HTML path maps those to typed errors.
+      return this.extractCaptionsJson(html, videoId);
+    }
+
+    let player: RawPlayerResponse;
+    try {
+      const response = await this.httpClient.post(
+        INNERTUBE_PLAYER_URL,
+        { context: INNERTUBE_CONTEXT, videoId },
+        { params: { key: apiKey } },
+      );
+      player = response.data as RawPlayerResponse;
+    } catch (error) {
+      throw this.mapHttpError(error, videoId);
+    }
+
+    const status = player?.playabilityStatus?.status;
+    if (status !== 'OK') {
+      const reason = player?.playabilityStatus?.reason ?? '';
+      if (status === 'LOGIN_REQUIRED' && /bot/i.test(reason)) {
+        throw new IpBlocked(videoId);
+      }
+      throw new VideoUnavailable(videoId);
+    }
+
+    const captionsData = player.captions?.playerCaptionsTracklistRenderer;
+    if (!captionsData) {
+      throw new TranscriptsDisabled(videoId);
+    }
+    if (!captionsData.captionTracks) {
+      throw new NoTranscriptFound(videoId, []);
+    }
+
+    return {
+      ...captionsData,
+      // srv3 is a `<p t= d=>` millisecond format the parser does not read; without `fmt`
+      // YouTube serves the classic `<text start= dur=>` XML.
+      captionTracks: captionsData.captionTracks.map(track => ({
+        ...track,
+        baseUrl: track.baseUrl?.replace('&fmt=srv3', ''),
+      })),
+    };
   }
 
   /**
